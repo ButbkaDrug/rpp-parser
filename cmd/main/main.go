@@ -31,7 +31,7 @@ func main() {
 	}))
 	slog.SetDefault(logger)
 
-	fileBytes, err := os.ReadFile("/home/butbkadrug/Music/REAPER/Your Love Never Fails - Bb - 114 BPM/Your Love Never Fails - Bb - 114 BPM.rpp")
+	fileBytes, err := os.ReadFile("/Music/REAPER/BaseProject/BaseProject.rpp")
 
 	if err != nil {
 		log.Fatal(err)

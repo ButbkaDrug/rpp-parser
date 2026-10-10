@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"fmt"
 	"log"
 	"log/slog"
 	"rpp-parser/pkg/lexer"
@@ -36,6 +37,7 @@ type Project struct {
 	Markers []Marker
 	// Tracks parsed and stored as found in reaper.rpp file
 	Tracks []Track
+	Errors []error
 }
 
 type Marker struct {
@@ -65,13 +67,18 @@ type Marker struct {
 	GUID string
 
 	// Bool flag that lets us know where this marker represents the end of the region
+	// it can be a number though.. like 8 or 9. I don't know why..
 	IsEnd bool
+
+	//Number - lane on which region is places. Absent in the older projects. Can be 1 or 2 for sure
+	Line int
 }
 
 func newMarker() *Marker {
 	return &Marker{
 		IsRegion: false,
 		IsEnd:    false,
+		Line:     1,
 	}
 }
 
@@ -308,19 +315,19 @@ func (p *Parser) NextToken() {
 	p.peekToken = p.l.NextToken()
 }
 
-func (p *Parser) parseMarkerStatement() *Marker {
+func (p *Parser) parseMarkerStatement() (*Marker, error) {
 	m := newMarker()
 
 	//NOTE: Parsing ID
 
 	if !p.expectPeek(token.INT) {
-		log.Fatal("error parsing marker id. expected int, got ", p.peekToken.Type)
+		return nil, fmt.Errorf("error parsing marker id. expected int, got %s", p.peekToken.Type)
 	}
 
 	id, err := strconv.Atoi(p.curToken.Value)
 
 	if err != nil {
-		log.Fatal("error parsing marker: ", err)
+		return nil, fmt.Errorf("error parsing marker: %s", err)
 	}
 
 	m.ID = id
@@ -336,22 +343,22 @@ func (p *Parser) parseMarkerStatement() *Marker {
 	//NOTE: Parsing isRegion or Ending
 
 	if !p.expectPeek(token.INT) {
-		log.Fatal("error parsing marker type exprected int got ", p.peekToken.Type)
+		return nil, fmt.Errorf("error parsing marker type exprected int got %s", p.peekToken.Type)
 	}
 
 	valueInt, err := strconv.Atoi(p.curToken.Value)
 
-	isRegion := valueInt != 0 && valueInt != 8
+	isRegion := valueInt != 0 && valueInt != 8 && valueInt != 9
 
 	if err != nil {
-		log.Fatal("error parsing marker type ", err)
+		return nil, fmt.Errorf("error parsing marker type %s", err)
 	}
 
 	//NOTE: if marker signifies the end of the region we stop here and return
 	if p.expectPeek(token.NEWLINE) {
 		m.IsEnd = true
 
-		return m
+		return m, nil
 	}
 
 	//NOTE: otherwise we will continue process data
@@ -360,13 +367,13 @@ func (p *Parser) parseMarkerStatement() *Marker {
 	//NOTE: Color
 
 	if !p.expectPeek(token.INT) {
-		log.Fatal("error parsing marker color. expected int got ", p.peekToken.Type)
+		return nil, fmt.Errorf("error parsing marker color. expected int got %s", p.peekToken.Type)
 	}
 
 	color, err := strconv.Atoi(p.curToken.Value)
 
 	if err != nil {
-		log.Fatal("error parsing marker color ", err)
+		return nil, fmt.Errorf("error parsing marker color %s", err)
 	}
 
 	m.Color = color
@@ -374,13 +381,13 @@ func (p *Parser) parseMarkerStatement() *Marker {
 	//NOTE: Unknown field
 
 	if !p.expectPeek(token.INT) {
-		log.Fatal("error parsing marker unknown field. expected int got ", p.peekToken.Type)
+		return nil, fmt.Errorf("error parsing marker unknown field. expected int got %s", p.peekToken.Type)
 	}
 
 	one, err := strconv.Atoi(p.curToken.Value)
 
 	if err != nil {
-		log.Fatal("error parsing marker unknown field: ", err)
+		return nil, fmt.Errorf("error parsing marker unknown field: %s", err)
 	}
 
 	m.one = one
@@ -388,7 +395,7 @@ func (p *Parser) parseMarkerStatement() *Marker {
 	//NOTE: B field
 
 	if !p.expectPeek(token.STRING) {
-		log.Fatal("error parsing marker B field. expected ident got ", p.peekToken.Type)
+		return nil, fmt.Errorf("error parsing marker B field. expected ident got %s", p.peekToken.Type)
 	}
 
 	m.b = p.curToken.Value
@@ -396,7 +403,7 @@ func (p *Parser) parseMarkerStatement() *Marker {
 	//NOTE: GUID
 
 	if !p.expectPeek(token.STRING) {
-		log.Fatal("error parsing marker guid expected ident got ", p.peekToken.Type)
+		return nil, fmt.Errorf("error parsing marker guid expected ident got %s", p.peekToken.Type)
 	}
 
 	m.GUID = p.curToken.Value
@@ -404,22 +411,34 @@ func (p *Parser) parseMarkerStatement() *Marker {
 	//NOTE: End
 
 	if !p.expectPeek(token.INT) {
-		log.Fatal("error parsing marker isEnd. expected int got ", p.peekToken.Type)
+		return nil, fmt.Errorf("error parsing marker isEnd. expected int got %s", p.peekToken.Type)
 	}
 
 	end, err := strconv.ParseBool(p.curToken.Value)
 
 	if err != nil {
-		log.Fatal("error parsing marker isEnd: ", err)
+		return nil, fmt.Errorf("error parsing marker isEnd: %s", err)
 	}
 
 	m.IsEnd = end
 
-	if !p.expectPeek(token.NEWLINE) {
-		log.Fatal("error parsing marker. expected new line got data:", p.peekToken.Type, p.peekToken.Value)
+	if !p.expectPeek(token.NEWLINE) && !p.expectPeek(token.INT) {
+		return nil, fmt.Errorf("error parsing marker. expected new line or int got data: %s %v", p.peekToken.Type, p.peekToken.Value)
 	}
 
-	return m
+	//older project migh not have it set. So we will set default 1
+	m.Line = 1
+
+	if p.curToken.Type != token.NEWLINE {
+		line, err := strconv.Atoi(p.curToken.Value)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing line number expected int got %s", p.peekToken.Type)
+		}
+
+		m.Line = line
+	}
+
+	return m, nil
 }
 
 func (p *Parser) parseFloat(stringValue, errMsg string) float64 {
@@ -609,7 +628,12 @@ func (p *Parser) ParseProject(project *Project) {
 		slog.Debug("new token", "token", p.curToken, "peek", p.peekToken)
 		switch p.curToken.Type {
 		case token.MARKER:
-			m := p.parseMarkerStatement()
+			m, err := p.parseMarkerStatement()
+
+			if err != nil {
+				project.Errors = append(project.Errors, err)
+			}
+
 			if m != nil {
 				project.Markers = append(project.Markers, *m)
 			}

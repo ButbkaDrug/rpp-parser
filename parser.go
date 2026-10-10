@@ -2,6 +2,7 @@ package rppparser
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"rpp-parser/pkg/lexer"
@@ -68,7 +69,16 @@ func Parse(path string, opts ...Options) (parser.Project, error) {
 	p.ParseProject(proj)
 	proj.Path = path
 
-	return *proj, nil
+	var parsingErr error
+	if len(proj.Errors) > 0 {
+		parsingErr = fmt.Errorf("%d Errors occured during parsing process.", len(proj.Errors))
+
+		for i, err := range proj.Errors {
+			errors.Join(parsingErr, fmt.Errorf("%d: %s\n", i, err))
+		}
+	}
+
+	return *proj, parsingErr
 }
 
 func ParseBytesIntoStruct(data []byte, proj *parser.Project) error {
